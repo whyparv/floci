@@ -64,6 +64,8 @@ floci:
   docker:
     log-max-size: "10m"
     log-max-file: "3"
+    docker-host: unix:///var/run/docker.sock
+    docker-config-path: ""
 
   services:
     ssm:
@@ -85,7 +87,6 @@ floci:
       ephemeral: false
       default-memory-mb: 128
       default-timeout-seconds: 3
-      docker-host: unix:///var/run/docker.sock
       runtime-api-base-port: 9200
       runtime-api-max-port: 9299
       code-path: ./data/lambda-code
