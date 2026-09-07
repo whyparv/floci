@@ -32,16 +32,18 @@ RDS Data API (`rds-data`) is documented separately because it uses REST JSON rou
 | `DeleteDBParameterGroup` | Delete a parameter group |
 | `ModifyDBParameterGroup` | Update parameter group settings |
 | `DescribeDBParameters` | List parameters in a group |
-| `CreateDBClusterParameterGroup` | - |
-| `DescribeDBClusterParameterGroups` | - |
-| `DeleteDBClusterParameterGroup` | - |
-| `ModifyDBClusterParameterGroup` | - |
-| `DescribeDBClusterParameters` | - |
+| `CreateDBClusterParameterGroup` | Create an Aurora-compatible cluster parameter group |
+| `DescribeDBClusterParameterGroups` | List cluster parameter groups |
+| `DeleteDBClusterParameterGroup` | Delete a cluster parameter group |
+| `ModifyDBClusterParameterGroup` | Update cluster parameter group settings |
+| `DescribeDBClusterParameters` | List parameters in a cluster group |
 | `CreateOptionGroup` | Create an option group |
 | `DescribeOptionGroups` | List option groups, including the implicit `default:` groups |
 | `ModifyOptionGroup` | Add, update, or remove options in an option group |
 | `DeleteOptionGroup` | Delete an option group |
-| `DescribeDBSnapshots` | Return an empty snapshot list (snapshots are not modeled) |
+| `CreateDBSnapshot` | Create a snapshot of a DB instance |
+| `RestoreDBInstanceFromDBSnapshot` | Create a new DB instance from a snapshot |
+| `DescribeDBSnapshots` | List DB instance snapshots |
 | `DescribeDBProxies` | List DB proxies |
 | `CreateDBProxy` | Create a DB proxy |
 | `ModifyDBProxy` | Update mutable DB proxy authentication, logging, timeout, TLS, role, and security-group settings |
