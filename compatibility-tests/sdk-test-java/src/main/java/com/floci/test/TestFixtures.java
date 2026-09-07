@@ -36,6 +36,7 @@ import software.amazon.awssdk.services.ssoadmin.SsoAdminClient;
 import software.amazon.awssdk.services.identitystore.IdentitystoreClient;
 import software.amazon.awssdk.services.budgets.BudgetsClient;
 import software.amazon.awssdk.services.macie2.Macie2Client;
+import software.amazon.awssdk.services.detective.DetectiveClient;
 import software.amazon.awssdk.services.rum.RumClient;
 import software.amazon.awssdk.services.resourceexplorer2.ResourceExplorer2Client;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
@@ -274,10 +275,14 @@ public final class TestFixtures {
     }
 
     public static OrganizationsClient organizationsClient() {
+        return organizationsClient("test");
+    }
+
+    public static OrganizationsClient organizationsClient(String accountId) {
         return OrganizationsClient.builder()
                 .endpointOverride(ENDPOINT)
                 .region(REGION)
-                .credentialsProvider(CREDENTIALS)
+                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accountId, "test")))
                 .build();
     }
 
@@ -335,6 +340,14 @@ public final class TestFixtures {
 
     public static Macie2Client macie2Client(String accountId) {
         return Macie2Client.builder()
+                .endpointOverride(ENDPOINT)
+                .region(REGION)
+                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accountId, "test")))
+                .build();
+    }
+
+    public static DetectiveClient detectiveClient(String accountId) {
+        return DetectiveClient.builder()
                 .endpointOverride(ENDPOINT)
                 .region(REGION)
                 .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accountId, "test")))
