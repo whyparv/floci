@@ -18,7 +18,7 @@ import static org.hamcrest.Matchers.notNullValue;
  * it via {@code sts:AssumeRoleWithWebIdentity}.
  *
  * <p>Also covers the negative cases that matter — wrong service account, tampered signature, wrong
- * audience — and the compatibility guarantee that an opaque third-party token is still accepted.
+ * audience, and the compatibility guarantee that an opaque third-party token is still accepted.
  */
 @QuarkusTest
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
