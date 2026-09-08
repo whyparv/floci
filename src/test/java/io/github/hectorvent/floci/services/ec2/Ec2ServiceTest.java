@@ -380,6 +380,81 @@ class Ec2ServiceTest {
     }
 
     @Test
+    void describeLaunchTemplatesRejectsMissingExplicitNamesAndIds() {
+        Ec2Service service = new Ec2Service(mockConfig(true), mock(Ec2ContainerManager.class),
+                mock(Ec2PortForwardManager.class),
+                mock(AmiImageResolver.class), mock(Ec2ImageCatalog.class), new Ec2InstanceTypeCatalog(),
+                new InMemoryStorageFactory());
+
+        // An unfiltered describe on an account with no templates is not an error.
+        assertTrue(service.describeLaunchTemplates("us-east-1", List.of(), List.of(), Map.of()).isEmpty());
+
+        LaunchTemplateData data = new LaunchTemplateData();
+        data.setImageId("ami-present");
+        LaunchTemplate present = service.createLaunchTemplate("us-east-1", "present-template", data, List.of());
+
+        assertEquals(1, service.describeLaunchTemplates(
+                "us-east-1", List.of(), List.of("present-template"), Map.of()).size());
+
+        // Karpenter creates a launch template only when the lookup fails with this code; an empty
+        // success reads as "already there" and leaves it waiting on a template nothing will create.
+        AwsException byName = assertThrows(AwsException.class, () -> service.describeLaunchTemplates(
+                "us-east-1", List.of(), List.of("absent-template"), Map.of()));
+        assertEquals("InvalidLaunchTemplateName.NotFoundException", byName.getErrorCode());
+        assertEquals(400, byName.getHttpStatus());
+
+        // A missing name is not masked by a present one in the same request.
+        AwsException mixed = assertThrows(AwsException.class, () -> service.describeLaunchTemplates(
+                "us-east-1", List.of(), List.of("present-template", "absent-template"), Map.of()));
+        assertEquals("InvalidLaunchTemplateName.NotFoundException", mixed.getErrorCode());
+
+        AwsException byId = assertThrows(AwsException.class, () -> service.describeLaunchTemplates(
+                "us-east-1", List.of("lt-0000000000000dead"), List.of(), Map.of()));
+        assertEquals("InvalidLaunchTemplateId.NotFound", byId.getErrorCode());
+
+        // Another region does not hold the template, so the same name is missing there.
+        AwsException otherRegion = assertThrows(AwsException.class, () -> service.describeLaunchTemplates(
+                "eu-west-1", List.of(), List.of("present-template"), Map.of()));
+        assertEquals("InvalidLaunchTemplateName.NotFoundException", otherRegion.getErrorCode());
+
+        // A filter that matches nothing still returns an empty list rather than an error.
+        assertTrue(service.describeLaunchTemplates("us-east-1", List.of(), List.of(),
+                Map.of("launch-template-name", List.of("no-such-template"))).isEmpty());
+        assertTrue(service.describeLaunchTemplates("us-east-1", List.of(present.getLaunchTemplateId()),
+                List.of(), Map.of("launch-template-name", List.of("no-such-template"))).isEmpty());
+
+        // AutoScaling reports its own ValidationError for an unresolved template, so the version
+        // lookup it goes through keeps answering with an empty list instead of raising NotFound.
+        assertTrue(service.describeLaunchTemplateVersions(
+                "us-east-1", null, "absent-template", List.of()).isEmpty());
+    }
+
+    @Test
+    void missingLaunchTemplateIdReportsTheSameCodeWhicheverCallLooksItUp() {
+        Ec2Service service = new Ec2Service(mockConfig(true), mock(Ec2ContainerManager.class),
+                mock(Ec2PortForwardManager.class),
+                mock(AmiImageResolver.class), mock(Ec2ImageCatalog.class), new Ec2InstanceTypeCatalog(),
+                new InMemoryStorageFactory());
+
+        // The mutating paths resolve the template through findLaunchTemplate rather than
+        // describeLaunchTemplates, and used to spell the same condition
+        // InvalidLaunchTemplateId.NotFoundException.
+        AwsException modify = assertThrows(AwsException.class, () -> service.modifyLaunchTemplate(
+                "us-east-1", "lt-0000000000000dead", null, "1"));
+        assertEquals("InvalidLaunchTemplateId.NotFound", modify.getErrorCode());
+        assertEquals(400, modify.getHttpStatus());
+
+        AwsException delete = assertThrows(AwsException.class, () -> service.deleteLaunchTemplate(
+                "us-east-1", "lt-0000000000000dead", null));
+        assertEquals("InvalidLaunchTemplateId.NotFound", delete.getErrorCode());
+
+        // A missing name keeps the Exception suffix EC2 uses on that one.
+        AwsException byName = assertThrows(AwsException.class, () -> service.deleteLaunchTemplate(
+                "us-east-1", null, "absent-template"));
+        assertEquals("InvalidLaunchTemplateName.NotFoundException", byName.getErrorCode());
+    }
+
+    @Test
     void launchTemplateVersionInheritsOmittedFieldsFromRequestedSourceVersion() {
         Ec2Service service = new Ec2Service(mockConfig(true), mock(Ec2ContainerManager.class),
                 mock(Ec2PortForwardManager.class),

@@ -4370,9 +4370,14 @@ public class Ec2Service implements ContainerTeardown, ResourceProvider {
         return launchTemplate;
     }
 
+    /**
+     * Unknown ids and names yield an empty list here rather than the NotFound that
+     * {@link #describeLaunchTemplates} raises: AutoScaling resolves a group's launch template
+     * through this method and reports its own ValidationError when nothing comes back.
+     */
     public List<LaunchTemplate> describeLaunchTemplateVersions(String region, String id, String name,
                                                                List<String> requestedVersions) {
-        List<LaunchTemplate> templates = describeLaunchTemplates(
+        List<LaunchTemplate> templates = matchingLaunchTemplates(
                 region,
                 id != null && !id.isBlank() ? List.of(id) : List.of(),
                 name != null && !name.isBlank() ? List.of(name) : List.of(),
@@ -4414,8 +4419,34 @@ public class Ec2Service implements ContainerTeardown, ResourceProvider {
         return launchTemplate;
     }
 
+    /**
+     * DescribeLaunchTemplates as EC2 defines it: an explicitly requested name or id that does not
+     * exist is an error, not an empty result. Callers that only want to look a template up, where
+     * "absent" is an answer rather than a failure, use {@link #matchingLaunchTemplates} instead.
+     */
     public List<LaunchTemplate> describeLaunchTemplates(String region, List<String> ids,
                                                         List<String> names, Map<String, List<String>> filters) {
+        if (!names.isEmpty() || !ids.isEmpty()) {
+            List<LaunchTemplate> regionTemplates =
+                    matchingLaunchTemplates(region, List.of(), List.of(), Map.of());
+            for (String name : names) {
+                if (regionTemplates.stream().noneMatch(lt -> name.equals(lt.getLaunchTemplateName()))) {
+                    throw new AwsException("InvalidLaunchTemplateName.NotFoundException",
+                            "The launch template '" + name + "' does not exist.", 400);
+                }
+            }
+            for (String id : ids) {
+                if (regionTemplates.stream().noneMatch(lt -> id.equals(lt.getLaunchTemplateId()))) {
+                    throw new AwsException("InvalidLaunchTemplateId.NotFound",
+                            "The launch template ID '" + id + "' does not exist.", 400);
+                }
+            }
+        }
+        return matchingLaunchTemplates(region, ids, names, filters);
+    }
+
+    private List<LaunchTemplate> matchingLaunchTemplates(String region, List<String> ids,
+                                                         List<String> names, Map<String, List<String>> filters) {
         ensureDefaultResources(region);
         return launchTemplates.scan(k -> true).stream()
                 .filter(lt -> lt.getRegion().equals(region))
@@ -4462,6 +4493,12 @@ public class Ec2Service implements ContainerTeardown, ResourceProvider {
         return launchTemplate;
     }
 
+    /**
+     * EC2 spells the two not-found codes asymmetrically —
+     * {@code InvalidLaunchTemplateName.NotFoundException} but {@code InvalidLaunchTemplateId.NotFound},
+     * no suffix. Both are reproduced as AWS emits them; making them consistent would break clients
+     * such as Karpenter, which match on the exact strings.
+     */
     private LaunchTemplate findLaunchTemplate(String region, String id, String name) {
         if (id != null && !id.isBlank()) {
             LaunchTemplate launchTemplate = launchTemplates.get(key(region, id)).orElse(null);
@@ -4475,7 +4512,7 @@ public class Ec2Service implements ContainerTeardown, ResourceProvider {
                     .orElseThrow(() -> new AwsException("InvalidLaunchTemplateName.NotFoundException",
                             "The specified launch template does not exist.", 400));
         }
-        throw new AwsException("InvalidLaunchTemplateId.NotFoundException",
+        throw new AwsException("InvalidLaunchTemplateId.NotFound",
                 "The specified launch template does not exist.", 400);
     }
 
