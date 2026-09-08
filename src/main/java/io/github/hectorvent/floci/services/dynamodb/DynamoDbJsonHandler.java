@@ -31,6 +31,7 @@ public class DynamoDbJsonHandler {
     private final KinesisService kinesisService;
     private final ObjectMapper objectMapper;
     private final DynamoDbPartiQLHandler partiQLHandler;
+    private final Object importLock = new Object();
 
     @Inject
     public DynamoDbJsonHandler(DynamoDbService dynamoDbService, DynamoDbStreamService dynamoDbStreamService,
@@ -75,6 +76,9 @@ public class DynamoDbJsonHandler {
             case "ExportTableToPointInTime" -> handleExportTable(request, region);
             case "DescribeExport" -> handleDescribeExport(request, region);
             case "ListExports" -> handleListExports(request, region);
+            case "ImportTable" -> handleImportTable(request, region);
+            case "DescribeImport" -> handleDescribeImport(request, region);
+            case "ListImports" -> handleListImports(request, region);
             case "ExecuteStatement" -> handleExecuteStatement(request, region);
             case "ExecuteTransaction" -> handleExecuteTransaction(request, region);
             case "BatchExecuteStatement" -> handleBatchExecuteStatement(request, region);
@@ -86,6 +90,15 @@ public class DynamoDbJsonHandler {
     }
 
     private Response handleCreateTable(JsonNode request, String region) {
+        var table = createTableFromSpec(request, region, "ACTIVE");
+
+        var response = objectMapper.createObjectNode();
+        response.set("TableDescription", tableToNode(table));
+        return Response.ok(response).build();
+    }
+
+    /** Shared by CreateTable and ImportTable, whose TableCreationParameters use the same keys. */
+    private TableDefinition createTableFromSpec(JsonNode request, String region, String initialStatus) {
         // Distinguish missing (undefined) from empty ("") for TableName
         String tableNameRaw = (request.has("TableName") && !request.path("TableName").isNull())
                 ? request.path("TableName").asText() : null;
@@ -175,6 +188,7 @@ public class DynamoDbJsonHandler {
 
         TableDefinition table = dynamoDbService.createTable(tableName, keySchema, attrDefs,
                 readCapacity, writeCapacity, gsis, lsis, region);
+        table.setTableStatus(initialStatus);
 
         table.setDeletionProtectionEnabled(deletionProtection);
 
@@ -230,10 +244,7 @@ public class DynamoDbJsonHandler {
         // stream, billing, class, tag and SSE settings survive a restart -- stream state
         // especially, since startup rebuilds streams from the persisted table.
         dynamoDbService.persistTable(tableName, table, region);
-
-        ObjectNode response = objectMapper.createObjectNode();
-        response.set("TableDescription", tableToNode(table));
-        return Response.ok(response).build();
+        return table;
     }
 
     private Response handleDeleteTable(JsonNode request, String region) {
@@ -2395,6 +2406,51 @@ public class DynamoDbJsonHandler {
             summaries.add(objectMapper.valueToTree(s));
         }
         response.set("ExportSummaries", summaries);
+        if (result.nextToken() != null) {
+            response.put("NextToken", result.nextToken());
+        }
+        return Response.ok(response).build();
+    }
+
+    private Response handleImportTable(JsonNode request, String region) {
+        var response = objectMapper.createObjectNode();
+        response.set("ImportTableDescription", objectMapper.valueToTree(findOrStartImport(request, region)));
+        return Response.ok(response).build();
+    }
+
+    /** Held across the ClientToken lookup and the table creation so identical concurrent requests share one import. */
+    private ImportTableDescription findOrStartImport(JsonNode request, String region) {
+        synchronized (importLock) {
+            var existing = dynamoDbService.validateImportRequest(request);
+            if (existing != null) {
+                return existing;
+            }
+            return dynamoDbService.startImport(request,
+                    createTableFromSpec(request.path("TableCreationParameters"), region, "CREATING"), region);
+        }
+    }
+
+    private Response handleDescribeImport(JsonNode request, String region) {
+        var desc = dynamoDbService.describeImport(request.path("ImportArn").asText());
+
+        var response = objectMapper.createObjectNode();
+        response.set("ImportTableDescription", objectMapper.valueToTree(desc));
+        return Response.ok(response).build();
+    }
+
+    private Response handleListImports(JsonNode request, String region) {
+        var tableArn = request.hasNonNull("TableArn") ? request.get("TableArn").asText() : null;
+        var pageSize = request.hasNonNull("PageSize") ? request.get("PageSize").asInt() : null;
+        var nextToken = request.hasNonNull("NextToken") ? request.get("NextToken").asText() : null;
+
+        var result = dynamoDbService.listImports(tableArn, pageSize, nextToken);
+
+        var response = objectMapper.createObjectNode();
+        var summaries = objectMapper.createArrayNode();
+        for (var summary : result.importSummaryList()) {
+            summaries.add(objectMapper.valueToTree(summary));
+        }
+        response.set("ImportSummaryList", summaries);
         if (result.nextToken() != null) {
             response.put("NextToken", result.nextToken());
         }
