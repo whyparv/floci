@@ -167,7 +167,12 @@ public class ResolvedServiceCatalog {
                         5000L, AwsNamespaces.REDSHIFT, ServiceProtocol.QUERY,
                         protocols(ServiceProtocol.QUERY),
                         Set.of(), Set.of("redshift"), Set.of(), Set.of()),
-                
+                descriptor("redshift-data", "redshift-data",
+                        config.services().redshift().enabled() && config.services().redshiftData().enabled(), true,
+                        "redshift-data", config.storage().mode(), 5000L, null, ServiceProtocol.JSON,
+                        protocols(ServiceProtocol.JSON),
+                        Set.of("RedshiftData."), Set.of("redshift-data"), Set.of(), Set.of()),
+
                 descriptor("events", "eventbridge", config.services().eventbridge().enabled(), true,
                         "eventbridge", config.storage().mode(), 5000L, null, ServiceProtocol.JSON,
                         protocols(ServiceProtocol.JSON),
