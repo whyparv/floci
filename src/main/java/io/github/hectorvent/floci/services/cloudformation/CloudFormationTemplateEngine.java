@@ -129,10 +129,12 @@ public class CloudFormationTemplateEngine {
                 JsonNode branch = selectIfBranch(node.get("Fn::If"));
                 return branch == null ? TextNode.valueOf("") : resolveNode(branch);
             }
+            if (node.has("Fn::Split") || node.has("Fn::GetAZs") || node.has("Fn::Cidr")) {
+                return objectMapper.valueToTree(resolveList(node));
+            }
             if (node.has("Ref") || node.has("Fn::Sub") || node.has("Fn::Join") ||
                     node.has("Fn::Select") || node.has("Fn::Base64") ||
-                    node.has("Fn::GetAtt") || node.has("Fn::ImportValue") || node.has("Fn::Split") ||
-                    node.has("Fn::GetAZs") || node.has("Fn::Cidr") || node.has("Fn::FindInMap")) {
+                    node.has("Fn::GetAtt") || node.has("Fn::ImportValue") || node.has("Fn::FindInMap")) {
                 return TextNode.valueOf(resolve(node));
             }
             // Plain object — resolve each field
@@ -245,15 +247,7 @@ public class CloudFormationTemplateEngine {
             return "";
         }
         String delimiter = join.get(0).asText("");
-        JsonNode parts = join.get(1);
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < parts.size(); i++) {
-            if (i > 0) {
-                sb.append(delimiter);
-            }
-            sb.append(resolve(parts.get(i)));
-        }
-        return sb.toString();
+        return String.join(delimiter, resolveList(join.get(1)));
     }
 
     private String resolveSelect(JsonNode select) {
@@ -364,12 +358,8 @@ public class CloudFormationTemplateEngine {
                 return true;
             }
             if (node.has("Fn::If")) {
-                JsonNode ifNode = node.get("Fn::If");
-                if (ifNode.isArray() && ifNode.size() >= 3) {
-                    String conditionName = ifNode.get(0).asText();
-                    boolean condValue = conditions.getOrDefault(conditionName, false);
-                    return isListValuedIntrinsic(condValue ? ifNode.get(1) : ifNode.get(2));
-                }
+                JsonNode branch = selectIfBranch(node.get("Fn::If"));
+                return branch != null && isListValuedIntrinsic(branch);
             }
         }
         return false;
