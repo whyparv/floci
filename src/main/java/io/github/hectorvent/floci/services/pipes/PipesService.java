@@ -141,6 +141,10 @@ public class PipesService implements TagHandler, ResourceProvider {
     /**
      * Puts the pipe back to a configuration held in full: a property given as null is cleared, so
      * the pipe ends up carrying exactly what is passed here and nothing the caller left out.
+     *
+     * <p>The configuration was accepted when the pipe was written, so it is not validated again:
+     * a snapshot that predates a rule added since must still be restorable, or a CloudFormation
+     * rollback would fail on the very pipe it is putting back.
      */
     public Pipe restorePipe(String name, String target, String roleArn, String description,
                             DesiredState desiredState, String enrichment,
@@ -155,7 +159,11 @@ public class PipesService implements TagHandler, ResourceProvider {
      *
      * <p>With {@code clearUnsetProperties} false, a null property leaves the pipe's value alone:
      * that is what UpdatePipe promises its callers. With it true, a null property clears the pipe's
-     * value, which is what putting a pipe back to a configuration recorded in full needs.
+     * value, which is what putting a pipe back to a configuration recorded in full needs; that
+     * configuration was accepted when it was written, so only the update path validates.
+     *
+     * <p>Validation runs on the same retrieved pipe the write then mutates, so a pipe replaced
+     * between two lookups cannot be validated as one pipe and updated as another.
      */
     private Pipe writePipeConfiguration(String name, String target, String roleArn, String description,
                                         DesiredState desiredState, String enrichment,
@@ -167,10 +175,10 @@ public class PipesService implements TagHandler, ResourceProvider {
                 .orElseThrow(() -> new AwsException("NotFoundException",
                         "Pipe " + name + " does not exist.", 404));
 
-        JsonNode effectiveSourceParameters = sourceParameters == null && !clearUnsetProperties
-                ? pipe.getSourceParameters()
-                : sourceParameters;
-        validateSourceConfiguration(pipe.getSource(), effectiveSourceParameters);
+        if (!clearUnsetProperties) {
+            validateSourceConfiguration(pipe.getSource(),
+                    sourceParameters != null ? sourceParameters : pipe.getSourceParameters());
+        }
 
         writeProperty(target, clearUnsetProperties, pipe::setTarget);
         writeProperty(roleArn, clearUnsetProperties, pipe::setRoleArn);
