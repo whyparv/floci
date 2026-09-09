@@ -15,6 +15,7 @@ import io.github.hectorvent.floci.services.ec2.model.Instance;
 import io.github.hectorvent.floci.services.ec2.model.NetworkInterfaceListResult;
 import io.github.hectorvent.floci.services.ec2.model.IpPermission;
 import io.github.hectorvent.floci.services.ec2.model.Ipv6Range;
+import io.github.hectorvent.floci.services.ec2.model.KeyPair;
 import io.github.hectorvent.floci.services.ec2.model.SecurityGroupRule;
 import io.github.hectorvent.floci.services.ec2.model.UserIdGroupPair;
 import io.github.hectorvent.floci.services.ec2.model.InstanceState;
@@ -43,8 +44,13 @@ import io.github.hectorvent.floci.services.ec2.model.Vpc;
 import io.github.hectorvent.floci.services.ec2.model.VpcEndpoint;
 import io.github.hectorvent.floci.services.ec2.model.Volume;
 import io.github.hectorvent.floci.services.ec2.model.VolumeAttachment;
+import org.bouncycastle.openssl.PEMKeyPair;
+import org.bouncycastle.openssl.PEMParser;
+import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
 import org.junit.jupiter.api.Test;
 
+import java.io.StringReader;
+import java.security.interfaces.RSAPrivateCrtKey;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -787,6 +793,76 @@ class Ec2ServiceTest {
         AwsException error = assertThrows(AwsException.class,
                 () -> service.registerImage("us-east-1", "shared-name", null, null, null, List.of()));
         assertEquals("InvalidAMIName.Duplicate", error.getErrorCode());
+    }
+
+    @Test
+    void createKeyPairReturnsUsableMaterialRatherThanAPlaceholder() throws Exception {
+        Ec2Service service = new Ec2Service(mockConfig(true), mock(Ec2ContainerManager.class),
+                mock(Ec2PortForwardManager.class),
+                mock(AmiImageResolver.class), mock(Ec2ImageCatalog.class), new Ec2InstanceTypeCatalog(),
+                new InMemoryStorageFactory());
+
+        KeyPair first = service.createKeyPair("us-east-1", "usable-key");
+        KeyPair second = service.createKeyPair("us-east-1", "usable-key-2");
+
+        // Parse the material rather than shape-match it: the placeholder this replaced was a
+        // well-formed PEM envelope around 63 bytes of nothing, so any regex check passed.
+        Object parsed = new PEMParser(new StringReader(first.getKeyMaterial())).readObject();
+        assertTrue(parsed instanceof PEMKeyPair, "expected a PEM key pair, got: " + parsed);
+        assertEquals(2048, ((RSAPrivateCrtKey) new JcaPEMKeyConverter()
+                .getKeyPair((PEMKeyPair) parsed).getPrivate()).getModulus().bitLength());
+        // The public half is what RunInstances injects into authorized_keys.
+        assertNotNull(first.getPublicKey());
+        assertTrue(first.getPublicKey().startsWith("ssh-rsa "));
+        // A constant is not a fingerprint; two key pairs must differ in every disclosed field.
+        assertNotEquals(first.getKeyMaterial(), second.getKeyMaterial());
+        assertNotEquals(first.getPublicKey(), second.getPublicKey());
+        assertNotEquals(first.getKeyFingerprint(), second.getKeyFingerprint());
+    }
+
+    @Test
+    void importKeyPairFingerprintsTheSuppliedKeyRatherThanReportingAConstant() {
+        Ec2Service service = new Ec2Service(mockConfig(true), mock(Ec2ContainerManager.class),
+                mock(Ec2PortForwardManager.class),
+                mock(AmiImageResolver.class), mock(Ec2ImageCatalog.class), new Ec2InstanceTypeCatalog(),
+                new InMemoryStorageFactory());
+
+        String firstKey = Ec2KeyMaterial.generateRsa().openSshPublicKey();
+        String secondKey = Ec2KeyMaterial.generateRsa().openSshPublicKey();
+
+        KeyPair first = service.importKeyPair("us-east-1", "imported-a", firstKey);
+        KeyPair second = service.importKeyPair("us-east-1", "imported-b", secondKey);
+
+        assertNotEquals(first.getKeyFingerprint(), second.getKeyFingerprint());
+        assertEquals(Ec2KeyMaterial.fingerprintOf(firstKey), first.getKeyFingerprint());
+    }
+
+    @Test
+    void importKeyPairReportsTheFingerprintAwsWouldReportForTheSameKey() {
+        // The assertion above compares the service against the same helper it calls, so it
+        // cannot see a wrong fingerprinting scheme. These two are pinned to values derived
+        // outside this codebase from fixed throwaway keys:
+        //   RSA:     openssl rsa -in rsa.pem -pubout -outform DER | openssl md5 -c
+        //   ed25519: ssh-keygen -l -f ed25519.pub, minus its "SHA256:" prefix, padding kept
+        // matching the two schemes AWS documents for ImportKeyPair.
+        Ec2Service service = new Ec2Service(mockConfig(true), mock(Ec2ContainerManager.class),
+                mock(Ec2PortForwardManager.class),
+                mock(AmiImageResolver.class), mock(Ec2ImageCatalog.class), new Ec2InstanceTypeCatalog(),
+                new InMemoryStorageFactory());
+
+        String rsaKey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCp7mGC9NkQI+loxf1G9bM6HnCs9iR1nn"
+                + "zZA/f/o7hx/Wv1oDhx03k6H83I+Q49eE1XO56WBPxnr8/2G6UmS9D0RFKe9L+HJrfiZF7oLQ09Jw"
+                + "EK91VLNSkD0Bq2zhnfWJe/ULkaPQ7FgHEghRi8aI5PsATH6VCaJDKWxl+2bzM7MWlbKRAo8uuu2e"
+                + "vnGrgnu+RmuXJQCRYz6lG+JESVzm6MnHXYxme+UD+7c/tTYwzoswfXh8VN8QVzXmjfHi2Ve3PJ+Y"
+                + "uF2X2gKpRMNMf7cLWMCTOhZI2AgXX+NLDlCG0dEUm/DXdSKRTDhm3mIJmF67eGYuff+zHusBZ9cS"
+                + "BkW9i9";
+        String ed25519Key =
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII0fBPBUZHaEOBc2mySfmI5btu4mkvFfNRujmF7RH2fj";
+
+        assertEquals("4d:1a:39:2e:6a:18:60:9a:c5:2a:cb:cc:6c:de:22:b5",
+                service.importKeyPair("us-east-1", "pinned-rsa", rsaKey).getKeyFingerprint());
+        assertEquals("UOyzahv0Ty520U89wfCvKdTlp2TbtpmnlpJHPW3MbMk=",
+                service.importKeyPair("us-east-1", "pinned-ed25519", ed25519Key).getKeyFingerprint());
     }
 
     @Test
