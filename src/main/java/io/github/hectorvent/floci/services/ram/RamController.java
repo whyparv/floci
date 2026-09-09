@@ -76,7 +76,7 @@ public class RamController {
                     "Allows AWS Resource Access Manager to access AWS Organizations on your behalf.");
         }
         ObjectNode response = objectMapper.createObjectNode();
-        response.put("returnValue", service.enableSharingWithAwsOrganization());
+        response.put("returnValue", service.enableSharingWithAwsOrganization(regionResolver.getAccountId()));
         return Response.ok(response).build();
     }
 
