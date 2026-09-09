@@ -50,6 +50,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -2596,6 +2597,32 @@ class Ec2ServiceTest {
                 () -> service.describeTransitGatewayVpcAttachments("us-east-1",
                         List.of("tgw-attach-0123456789abcdef0"), Map.of())).getErrorCode(),
                 "a well-formed id that does not exist is a different failure");
+    }
+
+    /**
+     * floci does not yet support creating Connect attachments, so LZA's tgw-associations-and-
+     * propagations module, which describes them unconditionally alongside VPC attachments, needs
+     * this to at least answer with an empty account-wide list rather than an unrecognized-action
+     * error (LZA fidelity gap: AWSAccelerator-ToolkitProject build 29 failed with "Operation
+     * DescribeTransitGatewayConnects is not supported").
+     */
+    @Test
+    void describeTransitGatewayConnectsReturnsEmptyWhenNoneExist() {
+        Ec2Service service = prefixListService();
+
+        assertDoesNotThrow(() -> service.describeTransitGatewayConnects("us-east-1", List.of(), Map.of()));
+    }
+
+    @Test
+    void describeTransitGatewayConnectsRejectsAMalformedOrUnknownId() {
+        Ec2Service service = prefixListService();
+
+        assertEquals("InvalidTransitGatewayAttachmentID.Malformed", assertThrows(AwsException.class,
+                () -> service.describeTransitGatewayConnects("us-east-1", List.of("tgw-connect-nope"), Map.of()))
+                .getErrorCode());
+        assertEquals("InvalidTransitGatewayConnectID.NotFound", assertThrows(AwsException.class,
+                () -> service.describeTransitGatewayConnects("us-east-1",
+                        List.of("tgw-attach-0123456789abcdef0"), Map.of())).getErrorCode());
     }
 
     /** The gateway's owner is its own field, sourced from the gateway rather than from the VPC. */
