@@ -40,6 +40,8 @@ import io.github.hectorvent.floci.services.account.AccountController;
 import io.github.hectorvent.floci.services.accessanalyzer.AccessAnalyzerController;
 import io.github.hectorvent.floci.services.inspector2.Inspector2Controller;
 import io.github.hectorvent.floci.services.securityhub.SecurityHubController;
+import io.github.hectorvent.floci.services.ssooidc.SsoOidcController;
+import io.github.hectorvent.floci.services.ssoportal.SsoPortalController;
 import io.github.hectorvent.floci.services.detective.DetectiveController;
 import io.github.hectorvent.floci.services.aps.ApsController;
 import io.github.hectorvent.floci.services.controlcatalog.ControlCatalogController;
@@ -72,7 +74,8 @@ public class ResolvedServiceCatalog {
     private static final java.util.Map<String, String> CREDENTIAL_SCOPE_ALIASES =
             java.util.Map.of(
                     "s3express", "s3",
-                    "iot-jobs-data", "iot");
+                    "iot-jobs-data", "iot",
+                    "awsssoportal", "sso");
 
     private final ServiceCatalog catalog;
 
@@ -424,8 +427,12 @@ public class ResolvedServiceCatalog {
                 // StarlingDoveService above).
                 descriptor("sso", "ssoadmin", config.services().ssoadmin().enabled(), true,
                         null, null, 5000L, null, ServiceProtocol.JSON,
-                        protocols(ServiceProtocol.JSON),
-                        Set.of("SWBExternalService."), Set.of("sso"), Set.of(), Set.of()),
+                        protocols(ServiceProtocol.JSON, ServiceProtocol.REST_JSON),
+                        Set.of("SWBExternalService."), Set.of("sso", "awsssoportal"), Set.of(), Set.of(SsoPortalController.class)),
+                descriptor("sso-oidc", "ssooidc", config.services().ssooidc().enabled(), true,
+                        "ssooidc", config.storage().mode(), 5000L, null, ServiceProtocol.REST_JSON,
+                        protocols(ServiceProtocol.REST_JSON),
+                        Set.of(), Set.of("sso-oauth"), Set.of(), Set.of(SsoOidcController.class)),
                 descriptor("macie2", "macie2", config.services().macie2().enabled(), true,
                         "macie2", config.storage().mode(), 5000L, null, ServiceProtocol.REST_JSON,
                         protocols(ServiceProtocol.REST_JSON), Set.of(), Set.of("macie2"), Set.of(), Set.of(MacieController.class)),

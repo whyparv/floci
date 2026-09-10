@@ -724,6 +724,7 @@ public interface EmulatorConfig {
         NetworkFirewallServiceConfig networkfirewall();
         ServiceCatalogServiceConfig servicecatalog();
         SsoAdminServiceConfig ssoadmin();
+        SsoOidcServiceConfig ssooidc();
         Macie2ServiceConfig macie2();
         AccountServiceConfig account();
         AccessAnalyzerServiceConfig accessanalyzer();
@@ -762,6 +763,13 @@ public interface EmulatorConfig {
         boolean enabled();
     }
 
+    interface SsoOidcServiceConfig {
+        @WithDefault("true")
+        boolean enabled();
+
+        Optional<String> localPrincipalId();
+    }
+
     interface Macie2ServiceConfig {
         @WithDefault("true")
         boolean enabled();
@@ -780,6 +788,9 @@ public interface EmulatorConfig {
     interface IdentityStoreServiceConfig {
         @WithDefault("true")
         boolean enabled();
+
+        @WithDefault("floci-scim-token")
+        String scimBearerToken();
     }
 
     interface BudgetsServiceConfig {
