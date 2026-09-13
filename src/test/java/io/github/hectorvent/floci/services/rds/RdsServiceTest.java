@@ -172,6 +172,40 @@ class RdsServiceTest {
     }
 
     @Test
+    void createDbInstanceMakesRequestedPasswordValidBeforeProxyStartsAcceptingConnections() {
+        doAnswer(invocation -> {
+            assertEquals(DbInstanceStatus.CREATING,
+                    rdsService.getDbInstance("mypostgres").getStatus());
+            RdsAuthProxy.MasterPasswordCheck passwordCheck = invocation.getArgument(10);
+            assertTrue(passwordCheck.validate("admin", "secret123"));
+            assertFalse(passwordCheck.validate("admin", "wrong"));
+            return null;
+        }).when(proxyManager).startProxy(any(), any(), anyBoolean(), anyInt(), any(), anyInt(),
+                any(), any(), any(), any(), any());
+
+        DbInstance instance = rdsService.createDbInstance("mypostgres", "postgres", "13",
+                "admin", "secret123", null, "db.t3.micro",
+                20, false, null, null, null, null, false);
+
+        assertEquals(DbInstanceStatus.AVAILABLE, instance.getStatus());
+        assertEquals(DbInstanceStatus.AVAILABLE,
+                rdsService.getDbInstance("mypostgres").getStatus());
+    }
+
+    @Test
+    void createDbInstanceRemovesVisibleRecordWhenProxyStartupFails() {
+        doThrow(new IllegalStateException("proxy down"))
+                .when(proxyManager).startProxy(any(), any(), anyBoolean(), anyInt(), any(), anyInt(),
+                        any(), any(), any(), any(), any());
+
+        assertThrows(IllegalStateException.class, () -> rdsService.createDbInstance(
+                "mypostgres", "postgres", "13",
+                "admin", "secret123", null, "db.t3.micro",
+                20, false, null, null, null, null, false));
+        assertThrows(AwsException.class, () -> rdsService.getDbInstance("mypostgres"));
+    }
+
+    @Test
     void createDbInstanceRejectsLegacyBareAuroraEngine() {
         // "aurora" (bare) is the retired Aurora MySQL 5.6 identifier; real AWS no
         // longer accepts it for new instances/clusters and rejects it outright
