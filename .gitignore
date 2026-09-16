@@ -9,7 +9,6 @@ data/
 .settings/
 .project
 .classpath
-.vscode/
 .zed/settings.json
 .DS_Store
 .zed/settings.json
@@ -46,3 +45,7 @@ __pycache__/
 # The Release Cut toolchain is pinned; its lockfile must be committed
 # (npm ci fails without it) despite the global package-lock.json ignore.
 !.github/release-tooling/package-lock.json
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
